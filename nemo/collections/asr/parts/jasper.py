@@ -763,6 +763,10 @@ class ParallelBlock(nn.Module):
             self.weights = nn.Parameter(torch.ones(1, len(blocks), out_filters, 1), requires_grad=True)
         elif aggregation_mode == "se_attention":
             self.attention = SqueezeExciteAttention(out_filters, len(blocks) * out_filters, reduction_ratio)
+        elif aggregation_mode == "se_concat":
+            self.se = SqueezeExcite(len(blocks) * out_filters, reduction_ratio)
+            self.conv = MaskedConv1d(len(blocks) * out_filters, out_filters, 1)
+            self.activation = nn.ReLU()
 
 
     def forward(self, x):
@@ -781,22 +785,31 @@ class ParallelBlock(nn.Module):
         elif self.aggregation_mode == "se_attention":
             scaling_weights = self.attention(input_feat)
             scaling_weights = scaling_weights.view(batch, len(self.blocks), channels, 1)
+        elif self.aggregation_mode == "se_concat":
+            result = []
 
         for i, block in enumerate(self.blocks):
             output, mask = block(x)
 
             weighted_output = output[-1]
-            if self.aggregation_mode:
+            if self.aggregation_mode and self.aggregation_mode != "se_concat":
               weighted_output = scaling_weights[:, i, :, :] * output[-1]
 
             if result is None:
                 result = weighted_output 
+            elif self.aggregation_mode == "se_concat":
+                result.append(weighted_output)
             else:
                 result = result + weighted_output 
 
             if max_mask is None:
                 max_mask = mask
-            else:
-                max_mask = torch.max(torch.stack([mask, max_mask]), dim=0)[0]
+        
+        if self.aggregation_mode == "se_concat":
+            result = torch.cat(result, dim=1)
+            result = self.se(result)
+            result = self.conv(result, max_mask)[0]
+            result = self.activation(result)
+
         result = result + input_feat 
         return [result], max_mask
