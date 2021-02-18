@@ -33,6 +33,7 @@ model:
     se_context_size: -1
     se_repeat: false
     aggregation_mode: "single"
+    parallel_se: false
 
   tokenizer:
     dir: ???  # path to directory which contains either tokenizer.model (bpe) or vocab.txt (for wpe)
@@ -104,6 +105,7 @@ model:
         se_context_size: ${model.model_defaults.se_context_size}
         se_repeat: ${model.model_defaults.se_repeat}
         aggregation_mode: ${model.model_defaults.aggregation_mode}
+        parallel_se: ${model.model_defaults.parallel_se}
 
       - filters: 256
         repeat: ${model.model_defaults.repeat}
@@ -131,6 +133,7 @@ model:
         se_context_size: ${model.model_defaults.se_context_size}
         se_repeat: ${model.model_defaults.se_repeat}
         aggregation_mode: ${model.model_defaults.aggregation_mode}
+        parallel_se: ${model.model_defaults.parallel_se}
 
       - filters: 256
         repeat: ${model.model_defaults.repeat}
@@ -158,6 +161,7 @@ model:
         se_context_size: ${model.model_defaults.se_context_size}
         se_repeat: ${model.model_defaults.se_repeat}
         aggregation_mode: ${model.model_defaults.aggregation_mode}
+        parallel_se: ${model.model_defaults.parallel_se}
 
       - filters: &enc_final 640
         repeat: 1

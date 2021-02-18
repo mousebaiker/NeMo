@@ -753,20 +753,23 @@ class JasperBlock(nn.Module):
 
 
 class ParallelBlock(nn.Module):
-    def __init__(self, blocks, aggregation_mode=None, out_filters=None, reduction_ratio=8):
+    def __init__(self, blocks, aggregation_mode=None, out_filters=None, se=True, reduction_ratio=8):
         super().__init__()
         self.blocks = nn.ModuleList(blocks)
         self.aggregation_mode = aggregation_mode
+        self.se = se
         if aggregation_mode == "single":
             self.weights = nn.Parameter(torch.ones(1, len(blocks), 1,  1), requires_grad=True)
         elif aggregation_mode == "per_channel":
             self.weights = nn.Parameter(torch.ones(1, len(blocks), out_filters, 1), requires_grad=True)
         elif aggregation_mode == "se_attention":
             self.attention = SqueezeExciteAttention(out_filters, len(blocks) * out_filters, reduction_ratio)
-        elif aggregation_mode == "se_concat":
-            self.se = SqueezeExcite(len(blocks) * out_filters, reduction_ratio)
+        elif aggregation_mode == "concat":
             self.conv = MaskedConv1d(len(blocks) * out_filters, out_filters, 1)
             self.activation = nn.ReLU()
+        
+        if se:
+            self.se_block = SqueezeExcite(out_filters, reduction_ratio)
 
 
     def forward(self, x):
@@ -785,19 +788,19 @@ class ParallelBlock(nn.Module):
         elif self.aggregation_mode == "se_attention":
             scaling_weights = self.attention(input_feat)
             scaling_weights = scaling_weights.view(batch, len(self.blocks), channels, 1)
-        elif self.aggregation_mode == "se_concat":
+        elif self.aggregation_mode == "concat":
             result = []
 
         for i, block in enumerate(self.blocks):
             output, mask = block(x)
 
             weighted_output = output[-1]
-            if self.aggregation_mode and self.aggregation_mode != "se_concat":
+            if self.aggregation_mode and self.aggregation_mode != "concat":
               weighted_output = scaling_weights[:, i, :, :] * output[-1]
 
             if result is None:
                 result = weighted_output 
-            elif self.aggregation_mode == "se_concat":
+            elif self.aggregation_mode == "concat":
                 result.append(weighted_output)
             else:
                 result = result + weighted_output 
@@ -805,11 +808,13 @@ class ParallelBlock(nn.Module):
             if max_mask is None:
                 max_mask = mask
         
-        if self.aggregation_mode == "se_concat":
+        if self.aggregation_mode == "concat":
             result = torch.cat(result, dim=1)
-            result = self.se(result)
             result = self.conv(result, max_mask)[0]
             result = self.activation(result)
+
+        if self.se:
+            result = self.se_block(result)
 
         result = result + input_feat 
         return [result], max_mask
