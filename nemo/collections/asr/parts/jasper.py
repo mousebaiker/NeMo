@@ -767,6 +767,7 @@ class ParallelBlock(nn.Module):
         elif aggregation_mode == "concat":
             self.conv = MaskedConv1d(len(blocks) * out_filters, out_filters, 1)
             self.activation = nn.ReLU()
+            self.bn = nn.BatchNorm1d(out_filters, eps=1e-3, momentum=0.1)
         
         if se:
             self.se_block = SqueezeExcite(out_filters, reduction_ratio)
@@ -812,6 +813,7 @@ class ParallelBlock(nn.Module):
             result = torch.cat(result, dim=1)
             result = self.conv(result, max_mask)[0]
             result = self.activation(result)
+            result = self.bn(result)
 
         if self.se:
             result = self.se_block(result)
