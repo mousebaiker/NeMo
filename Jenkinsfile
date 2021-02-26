@@ -40,7 +40,6 @@ pipeline {
         sh 'python setup.py style'
       }
     }
-
     stage('Installation') {
       steps {
         sh './reinstall.sh release'
@@ -308,6 +307,29 @@ pipeline {
         }
       }
     }
+
+    stage('L2: Speech Transcription') {
+      when {
+        anyOf{
+          branch 'main'
+          changeRequest target: 'main'
+        }
+      }
+      failFast true
+      parallel {
+        stage('Speech to Text Transcribe') {
+          steps {
+            sh 'python examples/asr/transcribe_speech.py \
+            pretrained_name="QuartzNet15x5Base-En" \
+            audio_dir="/home/TestData/an4_transcribe/test_subset/" \
+            cuda=true \
+            amp=true'
+            sh 'rm -rf examples/asr/speech_to_text_transcriptions.txt'
+          }
+        }
+      }
+    }
+
 
     stage('L2: Segmentation Tool') {
          when {
@@ -855,16 +877,10 @@ pipeline {
               --config-name=aayn_base \
               model.train_ds.src_file_name=/home/TestData/nlp/nmt/toy_data/wmt14-de-en.src \
               model.train_ds.tgt_file_name=/home/TestData/nlp/nmt/toy_data/wmt14-de-en.ref \
-              model.train_ds.cache_ids=false \
-              model.train_ds.use_cache=false \
               model.validation_ds.src_file_name=/home/TestData/nlp/nmt/toy_data/wmt14-de-en.src \
               model.validation_ds.tgt_file_name=/home/TestData/nlp/nmt/toy_data/wmt14-de-en.src \
-              model.validation_ds.cache_ids=false \
-              model.validation_ds.use_cache=false \
               model.test_ds.src_file_name=/home/TestData/nlp/nmt/toy_data/wmt14-de-en.src \
               model.test_ds.tgt_file_name=/home/TestData/nlp/nmt/toy_data/wmt14-de-en.src \
-              model.test_ds.cache_ids=false \
-              model.test_ds.use_cache=false \
               model.encoder_tokenizer.tokenizer_model=/home/TestData/nlp/nmt/toy_data/tt_tokenizer.BPE.4096.model \
               model.decoder_tokenizer.tokenizer_model=/home/TestData/nlp/nmt/toy_data/tt_tokenizer.BPE.4096.model \
               trainer.gpus=[0] \

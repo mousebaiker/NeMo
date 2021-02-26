@@ -102,15 +102,24 @@ class NLPModel(ModelPT, Exportable):
         Args:
             cfg (DictConfig): Tokenizer config
         """
+        vocab_file = None
+        if self._is_model_being_restored():
+            if os.path.exists('tokenizer.vocab_file'):
+                # model is being restored from .nemo file so tokenizer.vocab_file has precedence
+                vocab_file = self.register_artifact(config_path='tokenizer.vocab_file', src='tokenizer.vocab_file')
 
-        if self._is_model_being_restored() and os.path.exists('tokenizer.vocab_file'):
-            # model is being restored from .nemo file so tokenizer.vocab_file has precedence
-            vocab_file = self.register_artifact(config_path='tokenizer.vocab_file', src='tokenizer.vocab_file')
-        elif cfg.vocab_file is not None:
+            # tokenizer.vocab_file is added to the config file and registered as artifact for .nemo file
+            # during training but this file is missing for load_from_checkpoint() method call
+            # it's safer to use restore_from .nemo file
+            elif cfg.vocab_file and not os.path.exists(cfg.vocab_file):
+                logging.warning(
+                    f'tokenizer.vocab_file not found at {cfg.vocab_file}. It is recommended to use restore_from() method with .nemo file.'
+                )
+            else:
+                vocab_file = self.register_artifact(config_path='tokenizer.vocab_file', src=cfg.vocab_file)
+        elif cfg.vocab_file:
             # use vocab file from config
             vocab_file = self.register_artifact(config_path='tokenizer.vocab_file', src=cfg.vocab_file)
-        else:
-            vocab_file = None
 
         tokenizer = get_tokenizer(
             tokenizer_name=cfg.tokenizer_name,
@@ -300,8 +309,7 @@ class NLPModel(ModelPT, Exportable):
                         )
 
                 if isinstance(self.bert_model, MegatronBertEncoder):
-                    # finish megatron-lm initialization
-                    self.bert_model._lazy_init_fn()
+                    self.bert_model.complete_lazy_init()
 
                     # model parallel checkpoints need to be restored after torch.distributed is initialized
                     if self._trainer.resume_from_checkpoint is not None:
@@ -342,18 +350,15 @@ class NLPModel(ModelPT, Exportable):
                         f'The BERT encoder: {self.bert_model} does not support model parallelism yet.'
                     )
             else:
-                if (
-                    hasattr(self, 'bert_model')
-                    and self.bert_model is not None
-                    and isinstance(self.bert_model, MegatronBertEncoder)
-                ):
-                    # finish megatron-lm initialization
-                    self.bert_model._lazy_init_fn()
+                # Megatron without model parallelism
+                self.complete_megatron_init()
         else:
             # testing stage
-            if isinstance(self.bert_model, MegatronBertEncoder):
-                # finish megatron-lm initialization
-                self.bert_model._lazy_init_fn()
+            self.complete_megatron_init()
+
+    def complete_megatron_init(self):
+        if isinstance(self.bert_model, MegatronBertEncoder):
+            self.bert_model.complete_lazy_init()
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         if hasattr(self, "bert_model") and isinstance(self.bert_model, MegatronBertEncoder):
