@@ -298,6 +298,7 @@ class ParallelConvASREncoder(NeuralModule, Exportable):
             kernel_size_factor = lcfg.get('kernel_size_factor', 1.0)
             stride_last = lcfg.get('stride_last', False)
             aggregation_mode = lcfg.get('aggregation_mode', None)
+            lambda_conv = lcfg.get('lambda_conv', False)
 
             parallel_blocks = []
             for kernel_size in lcfg['kernel']:
@@ -327,6 +328,7 @@ class ParallelConvASREncoder(NeuralModule, Exportable):
                         kernel_size_factor=kernel_size_factor,
                         stride_last=stride_last,
                         quantize=quantize,
+                        lambda_conv=lambda_conv,
                     )
                 )
             if len(parallel_blocks) == 1:

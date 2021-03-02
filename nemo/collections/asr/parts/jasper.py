@@ -20,6 +20,7 @@ import torch.nn as nn
 from torch import Tensor
 
 from nemo.collections.asr.parts.activations import Swish
+from nemo.collections.asr.parts.lambda_layer import LambdaConvSelfAttention
 
 try:
     from pytorch_quantization import calib
@@ -437,6 +438,7 @@ class JasperBlock(nn.Module):
         se_interpolation_mode='nearest',
         stride_last=False,
         quantize=False,
+        lambda_conv=False,
     ):
         super(JasperBlock, self).__init__()
 
@@ -480,6 +482,7 @@ class JasperBlock(nn.Module):
                     normalization=normalization,
                     norm_groups=norm_groups,
                     quantize=quantize,
+                    lambda_conv=lambda_conv,
                 )
             )
 
@@ -501,6 +504,7 @@ class JasperBlock(nn.Module):
                 normalization=normalization,
                 norm_groups=norm_groups,
                 quantize=quantize,
+                lambda_conv=lambda_conv,
             )
         )
 
@@ -633,11 +637,16 @@ class JasperBlock(nn.Module):
         normalization="batch",
         norm_groups=1,
         quantize=False,
+        lambda_conv=False,
     ):
         if norm_groups == -1:
             norm_groups = out_channels
-
-        if separable:
+        
+        if lambda_conv:
+            if isinstance(kernel_size, list):
+                kernel_size = kernel_size[0]
+            layers = [ LambdaConvSelfAttention(in_channels, out_channels, 16, kernel_size) ]
+        elif separable:
             layers = [
                 self._get_conv(
                     in_channels,
