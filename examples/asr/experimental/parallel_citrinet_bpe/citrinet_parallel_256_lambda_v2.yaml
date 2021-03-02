@@ -32,7 +32,6 @@ model:
     se: true
     se_context_size: -1
     se_repeat: false
-    aggregation_mode: "single"
 
   tokenizer:
     dir: ???  # path to directory which contains either tokenizer.model (bpe) or vocab.txt (for wpe)
@@ -103,7 +102,6 @@ model:
         se: ${model.model_defaults.se}
         se_context_size: ${model.model_defaults.se_context_size}
         se_repeat: ${model.model_defaults.se_repeat}
-        aggregation_mode: ${model.model_defaults.aggregation_mode}
 
       - filters: 256
         repeat: ${model.model_defaults.repeat}
