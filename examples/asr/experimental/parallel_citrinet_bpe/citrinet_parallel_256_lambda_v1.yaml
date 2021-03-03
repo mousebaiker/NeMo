@@ -63,6 +63,7 @@ model:
     feat_in: *n_mels
     activation: relu
     conv_mask: true
+    bn_zero_init: true
 
     jasper:
       - filters: 256
