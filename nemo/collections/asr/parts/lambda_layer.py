@@ -36,6 +36,9 @@ class LambdaConvLayer(nn.Module):
     def __init__(self, in_channels, out_channels, in_context_channels, key_size, rel_conv_kernel_size):
         super().__init__()
 
+        self.in_channels = in_channels
+        self.key_size = key_size
+
         self.query_proj = nn.Conv1d(in_channels, key_size, kernel_size=1)
         self.key_proj = nn.Conv1d(in_context_channels, key_size, kernel_size=1)
         self.val_proj = nn.Conv1d(in_context_channels, out_channels, kernel_size=1)
@@ -45,8 +48,14 @@ class LambdaConvLayer(nn.Module):
         self.value_bn  = nn.BatchNorm1d(out_channels)
 
         self.positional_conv = nn.Conv2d(1, key_size, (rel_conv_kernel_size, 1), padding=(rel_conv_kernel_size//2, 0))
-
     
+    
+    def init_weights(self):
+        nn.init.normal_(self.query_proj.weight, 0.0, self.key_size * self.in_channels**(-0.5))
+        nn.init.normal_(self.key_proj.weight, 0.0, self.in_channels**(-0.5))
+        nn.init.normal_(self.val_proj.weight, 0.0, self.in_channels**(-0.5))
+        nn.init.normal_(self.positional_conv.weight)
+
 
     def forward(self, x, context):
         """

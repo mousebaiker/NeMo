@@ -59,6 +59,8 @@ def init_weights(m, mode: Optional[str] = 'xavier_uniform'):
         if m.affine:
             nn.init.ones_(m.weight)
             nn.init.zeros_(m.bias)
+    elif isinstance(m, LambdaConvSelfAttention):
+        m.init_weights()
 
 
 def compute_new_kernel_size(kernel_size, kernel_width):
