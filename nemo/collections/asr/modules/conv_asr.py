@@ -194,6 +194,19 @@ class ConvASREncoder(NeuralModule, Exportable):
         return s_input[-1], length
 
 
+class ConvASRFeatureEncoder(ConvASREncoder):
+    @property
+    def input_types(self):
+        """Returns definitions of module input ports.
+        """
+        return OrderedDict(
+            {
+                "audio_signal": NeuralType(('B', 'D', 'T'), AcousticEncodedRepresentation()),
+                "length": NeuralType(tuple('B'), LengthsType()),
+            }
+        )
+
+
 class ParallelConvASREncoder(NeuralModule, Exportable):
     """
     Convolutional encoder for ASR models with parallel blocks.
@@ -347,6 +360,152 @@ class ParallelConvASREncoder(NeuralModule, Exportable):
             return s_input[-1]
 
         return s_input[-1], length
+
+
+class ParallelConvASRFeatureEncoder(ParallelConvASREncoder):
+    @property
+    def input_types(self):
+        """Returns definitions of module input ports.
+        """
+        return OrderedDict(
+            {
+                "audio_signal": NeuralType(('B', 'D', 'T'), AcousticEncodedRepresentation()),
+                "length": NeuralType(tuple('B'), LengthsType()),
+            }
+        )
+
+
+class ToweredConvASREncoder(NeuralModule, Exportable):
+    """
+    Convolutional encoder for ASR models with several towers, each
+    constiting of sequence of parallel blocks.
+    """
+
+    def _prepare_for_export(self):
+        m_count = 0
+        for m in self.modules():
+            if isinstance(m, MaskedConv1d):
+                m.use_mask = False
+                m_count += 1
+        logging.warning(f"Turned off {m_count} masked convolutions")
+
+    def input_example(self):
+        """
+        Generates input examples for tracing etc.
+        Returns:
+            A tuple of input examples.
+        """
+        input_example = torch.randn(16, self._feat_in, 256).to(next(self.parameters()).device)
+        return tuple([input_example])
+
+    @property
+    def disabled_deployment_input_names(self):
+        """Implement this method to return a set of input names disabled for export"""
+        return set(["length"])
+
+    @property
+    def disabled_deployment_output_names(self):
+        """Implement this method to return a set of output names disabled for export"""
+        return set(["encoded_lengths"])
+
+    def save_to(self, save_path: str):
+        pass
+
+    @classmethod
+    def restore_from(cls, restore_path: str):
+        pass
+
+    @property
+    def input_types(self):
+        """Returns definitions of module input ports.
+        """
+        return OrderedDict(
+            {
+                "audio_signal": NeuralType(('B', 'D', 'T'), SpectrogramType()),
+                "length": NeuralType(tuple('B'), LengthsType()),
+            }
+        )
+
+    @property
+    def output_types(self):
+        """Returns definitions of module output ports.
+        """
+        return OrderedDict(
+            {
+                "outputs": NeuralType(('B', 'D', 'T'), AcousticEncodedRepresentation()),
+                "encoded_lengths": NeuralType(tuple('B'), LengthsType()),
+            }
+        )
+
+    def __init__(
+        self,
+        prologue,
+        towers,
+        epilogue,
+        activation: str,
+        feat_in: int,
+        normalization_mode: str = "batch",
+        residual_mode: str = "add",
+        norm_groups: int = -1,
+        conv_mask: bool = True,
+        frame_splicing: int = 1,
+        init_mode: Optional[str] = 'xavier_uniform',
+        aggregation_mode: Optional[str] = None,
+        quantize: bool = False,
+    ):
+        super().__init__()
+
+        self._feat_in = feat_in
+        self.num_filters = prologue[0]['filters']
+        
+        prologue_params = {
+            'normalization_mode': normalization_mode,
+            'residual_mode': residual_mode,
+            'norm_groups': norm_groups,
+            'conv_mask': conv_mask,
+            'frame_splicing': frame_splicing,
+            'init_mode': init_mode,
+            'quantize': quantize,
+        }
+        towers_params = dict(prologue_params)
+        towers_params['aggregation_mode'] = aggregation_mode
+        epilogue_params = dict(prologue_params)
+
+
+        self.prologue = ConvASREncoder(prologue, activation, feat_in, **prologue_params)
+
+        self.towers = []
+        for tower in towers:
+            self.towers.append(ParallelConvASRFeatureEncoder(tower, activation, self.num_filters, **towers_params))
+        self.towers = nn.ModuleList(self.towers)
+
+        self.epilogue = ConvASRFeatureEncoder(epilogue, activation, self.num_filters, **epilogue_params)
+
+        self.encoder = torch.nn.Sequential(self.prologue, self.towers, self.epilogue)
+        self.apply(lambda x: init_weights(x, mode=init_mode))
+
+    @typecheck()
+    def forward(self, audio_signal, length=None):
+        signal_pr, length = self.prologue(audio_signal=audio_signal, length=length)
+        
+        signals_enc, lengths_enc = None, None
+        for tower in self.towers:
+            signal_enc, length_enc = tower(audio_signal=signal_pr, length=length)
+            
+            if signals_enc is None:
+                signals_enc = signal_enc
+            else:
+                signals_enc = signals_enc + signal_enc
+            
+            if lengths_enc is None:
+                lengths_enc = length_enc
+
+        signal_output, length = self.epilogue(audio_signal=signal_enc, length=length_enc)
+        if length is None:
+            return signal_output
+
+        return signal_output, length
+
 
 
 class ConvASRDecoder(NeuralModule, Exportable):
