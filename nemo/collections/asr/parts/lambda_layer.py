@@ -51,7 +51,7 @@ class LambdaConvLayer(nn.Module):
     
     
     def init_weights(self):
-        nn.init.normal_(self.query_proj.weight, 0.0, self.key_size * self.in_channels**(-0.5))
+        nn.init.normal_(self.query_proj.weight, 0.0, (self.key_size * self.in_channels)**(-0.5))
         nn.init.normal_(self.key_proj.weight, 0.0, self.in_channels**(-0.5))
         nn.init.normal_(self.val_proj.weight, 0.0, self.in_channels**(-0.5))
         nn.init.normal_(self.positional_conv.weight)
