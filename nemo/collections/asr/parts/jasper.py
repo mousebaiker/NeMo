@@ -469,9 +469,8 @@ class JasperBlock(nn.Module):
                 stride_val = [1]
             else:
                 stride_val = stride
-
-            conv.extend(
-                self._get_conv_bn_layer(
+            
+            conv_bn = self._get_conv_bn_layer(
                     inplanes_loop,
                     planes,
                     kernel_size=kernel_size,
@@ -486,14 +485,19 @@ class JasperBlock(nn.Module):
                     quantize=quantize,
                     lambda_conv=lambda_conv,
                 )
-            )
+            
+            act_dropout = self._get_act_dropout_layer(drop_prob=dropout, activation=activation) 
 
-            conv.extend(self._get_act_dropout_layer(drop_prob=dropout, activation=activation))
+            block = nn.Sequential(*conv_bn, *act_dropout)
+
+            if lambda_conv:
+                conv.append(ResidualLayer(block)) 
+            else:
+                conv.extend(block)
 
             inplanes_loop = planes
 
-        conv.extend(
-            self._get_conv_bn_layer(
+        conv_bn = self._get_conv_bn_layer(
                 inplanes_loop,
                 planes,
                 kernel_size=kernel_size,
@@ -508,7 +512,13 @@ class JasperBlock(nn.Module):
                 quantize=quantize,
                 lambda_conv=lambda_conv,
             )
-        )
+        
+        # In general, this should include SE block below. 
+        # But right now we don't use it.
+        if lambda_conv:
+            conv.append(ResidualLayer(conv_bn))
+        else:
+            conv.extend(conv_bn)
 
         if se:
             conv.append(
@@ -811,3 +821,12 @@ class ParallelBlock(nn.Module):
                 max_mask = torch.max(torch.stack([mask, max_mask]), dim=0)[0]
         result = result + input_feat 
         return [result], max_mask
+
+
+class ResidualLayer(nn.Module):
+    def __init__(self, layers):
+        super().__init__()
+        self.layers = nn.Sequential(*layers)
+    
+    def forward(self, x):
+        return self.layers(x) + x
